@@ -10,19 +10,34 @@
             background-color: #000;
         }
     </style>
-    <script src="//cdn.jsdelivr.net/phaser/2.2.2/phaser.min.js"></script>
+    <!--<script src="//cdn.jsdelivr.net/phaser/2.2.2/phaser.min.js"></script>		ONLINE-->
+	<script src="phaser.min.js"></script>										<!--OFFLINE-->
 </head>
 <body>
 
     <script type="text/javascript">
 
     var game = new Phaser.Game(752, 496, Phaser.AUTO);
+	
+	var timer;
+	var tcount = 4;
+	var scount = "";
+	var gametimeM = "-";
+	var gametimeS = "-";
+	var Rtile = "";
+	var SpeedCD = 0;
+	var SunSerialKiller = 0;
 
     var Pacman = function (game) {
 
         this.map = null;
         this.layer = null;
         this.pacman = null;
+		this.score= 0;
+		this.lives= 1;
+		this.life1 = null;
+		this.life2 = null;
+		this.life3 = null;
 
         this.safetile = 1;
         this.gridsize = 16;
@@ -44,8 +59,15 @@
     Pacman.prototype = {
 
         init: function () {
-
+			// Maintain aspect ratio
             this.scale.scaleMode = Phaser.ScaleManager.SHOW_ALL;
+			
+			// Keep original size
+			//this.scale.fullScreenScaleMode = Phaser.ScaleManager.NO_SCALE;
+			
+			// Stretch to fill
+			//this.scale.fullScreenScaleMode = Phaser.ScaleManager.EXACT_FIT;
+			
             this.scale.pageAlignHorizontally = true;
             this.scale.pageAlignVertically = true;
 
@@ -59,20 +81,37 @@
 
             //  We need this because the assets are on github pages
             //  Remove the next 2 lines if running locally
-            this.load.baseURL = 'https://psarrask.github.io/pacman/';			/////////////////////////
-            this.load.crossOrigin = 'anonymous';								/////////////////////////
+            //this.load.baseURL = 'https://psarrask.github.io/pacman/';			/////////////////////////
+            //this.load.crossOrigin = 'anonymous';								/////////////////////////
 
             this.load.image('drop', 'assets/drop.png');
 			this.load.image('sun', 'assets/sun.png');
+			this.load.image('superspeed', 'assets/superspeed.png');
+			this.load.image('life', 'assets/life.png');
             this.load.image('tiles', 'assets/pacman-tiles.png');
             this.load.spritesheet('pacman', 'assets/pacman.png', 32, 53);
             this.load.tilemap('map', 'assets/pacman-map.json', null, Phaser.Tilemap.TILED_JSON);
 
             //  Needless to say, graphics (C)opyright Namco
-
+			
+			///////SOUNDS///////
+			this.load.audio('getSUN', 'assets/EatSun.mp3');
+			this.load.audio('get20DROPS', 'assets/Eat20Drops.mp3');
+			this.load.audio('getALLDROPS', 'assets/GetAllDrops.mp3');
+			this.load.audio('MUSIC', 'assets/pvzm.mp3');
+			this.load.audio('PRAOU', 'assets/PraouPraou.mp3');
+			this.load.audio('Beeep', 'assets/beep.m4a');
         },
-
+		
+		
         create: function () {
+		
+			PVZM = game.add.audio('MUSIC');
+			EatSun = game.add.audio('getSUN');
+			Eat20Drops = game.add.audio('get20DROPS');
+			EatALLDrops = game.add.audio('getALLDROPS');
+			PraouPraou = game.add.audio ('PRAOU');
+			BEEP = game.add.audio('Beeep');
 
             this.map = this.add.tilemap('map');
             this.map.addTilesetImage('pacman-tiles', 'tiles');
@@ -81,9 +120,12 @@
 
             this.drops = this.add.physicsGroup();
 			this.suns = this.add.physicsGroup();
+			this.superspeed = this.add.physicsGroup();
 
             this.map.createFromTiles(2, this.safetile, 'drop', this.layer, this.drops);
 			this.map.createFromTiles(3, this.safetile, 'sun', this.layer, this.suns);
+			this.map.createFromTiles(4, this.safetile, 'superspeed', this.layer, this.superspeed);
+			this.superspeed.callAll('kill');
 			//this.map.createFromTiles(82, this.safetile);
 
             //  The drops will need to be offset by 6px to put them back in the middle of the grid
@@ -96,17 +138,97 @@
             //  Position Pacman at grid location 14x17 (the +8 accounts for his anchor)
             this.pacman = this.add.sprite((18 * 16) + 8, (15 * 16) + 8, 'pacman', 0);
             this.pacman.anchor.set(0.5);
-            this.pacman.animations.add('munch', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
-
+			
+			// MUNCH ANIMATIONS
+            this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
+			this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
+			this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
+			
+			this.life1 = this.add.sprite(175, 472, 'life');
+			this.life2 = this.add.sprite(195, 472, 'life');
+			this.life3 = this.add.sprite(215, 472, 'life');
+			
+			this.life2.visible = false;
+			this.life3.visible = false;
+			
+			this.CurrentScore1 = game.add.text(528, 471.6, "Score: " + this.score, { fontSize: "19px", fill: "#133913"});
+			this.CurrentScore2 = game.add.text(527, 470, "Score: " + this.score, { fontSize: "19px", fill: "#2d862d"});
+			
+			this.CurrentLives1 = game.add.text(120, 471.6, "Lives: " + this.lives, { fontSize: "19px", fill: "#133913"});
+			this.CurrentLives2 = game.add.text(119, 470, "Lives: " + this.lives, { fontSize: "19px", fill: "#2d862d"});
+			
             this.physics.arcade.enable(this.pacman);
             this.pacman.body.setSize(16, 16, 0, 0);
 
             this.cursors = this.input.keyboard.createCursorKeys();
 
-            this.pacman.play('munch');
-            this.move(Phaser.LEFT);
+            this.pacman.play('munchRL');
+            
+			//Arxiki kinisi-kateythinsi
+			this.move(Phaser.NONE);
+			this.input.disabled = true;
+			
+			this.SpeedHurry1 = game.add.text(367.5, 11.5, Rtile, { fontSize: "40px", fill: "#000"});
+			this.SpeedHurry2 = game.add.text(365, 10, Rtile, { fontSize: "40px", fill: "#fff"});
 
+			timer = game.time.create(false);
+			timer.loop(1000, this.updateCounter, this);
+			timer.start();
+			this.StartCount = game.add.text(350, 231, scount, { fontSize: "30px", fill: "#fff"});
+			this.StartGameTime1 = game.add.text(329.5, 471.5, "Time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "19px", fill: "#000"});
+			this.StartGameTime2 = game.add.text(327, 470, "Time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "19px", fill: "#fff"});
         },
+		
+		updateCounter: function () {
+			if (scount == "GO!" && gametimeS == "-"){ 
+				scount= "";
+				PVZM.play('', 0, 1, true);
+				this.input.disabled = false;
+				this.move(Phaser.RIGHT);
+				gametimeM = 0;
+				gametimeS = 0;
+			}
+			else if(gametimeS == 59 ){
+				gametimeM++;
+				gametimeS = 0;
+			}
+			else if (gametimeS != "-"){
+				gametimeS++;
+			}
+			else if (tcount == 1){ 
+				scount= "GO!";
+				BEEP.play();
+			}
+			else{
+				tcount--; 
+				if (tcount < 5) {
+					scount = "  " + tcount;
+					BEEP.play();
+				}
+			}
+			if(Rtile>0){
+				Rtile--;
+			}
+			else if(Rtile==0){
+				Rtile="";
+				this.superspeed.callAll('kill');
+			}
+			if(SpeedCD>0){
+				SpeedCD--;
+			}
+			else if(SpeedCD == 0){
+				SpeedCD=null;
+				this.speed=150;
+			}
+		},
+
+		render: function () {
+			//game.debug.text('Time until event: ' + timer.duration.toFixed(0), 32, 30);
+			//game.debug.text('Tcount: ' + tcount, 32, 50);
+			//game.debug.text('Scount: ' + scount, 32, 70);
+			//game.debug.text('Gametime: ' + gametimeS + "''", 32, 90);
+			//game.debug.text('Get SuperSpeed! ' + Rtile, 32, 110);
+		},
 
         checkKeys: function () {
 
@@ -207,15 +329,22 @@
 
             if (direction === Phaser.LEFT)
             {
+				this.pacman.play('munchRL');
                 this.pacman.scale.x = -1;
+            }
+			else if (direction === Phaser.RIGHT)
+            {
+				this.pacman.play('munchRL');
             }
             else if (direction === Phaser.UP)
             {
-                this.pacman.angle = 270;
+                //this.pacman.angle = 270;
+				this.pacman.play('munchUP');
             }
             else if (direction === Phaser.DOWN)
             {
-                this.pacman.angle = 90;
+                //this.pacman.angle = 90;
+				this.pacman.play('munchDOWN');
             }
 
             this.current = direction;
@@ -223,32 +352,96 @@
         },
 
         eatDrop: function (pacman, drop) {
-
+		
+			this.score++;
             drop.kill();
+			
+			if (this.score %5 === 0 ){ 
+				Eat20Drops.play();
+			}
+			
+			if (this.score == 50 && this.lives<3) {
+				this.score=0;
+				this.lives++;
+			}
 
-            if (this.drops.total === 0)
-            {
+            if (this.drops.total === 0){	
+				EatALLDrops.play();
                 this.drops.callAll('revive');
             }
-
+			
         },
 		
 		eatSun: function (pacman, sun) {
 
+			EatSun.play();
             sun.kill();
-
-            if (this.suns.total === 0)
-            {
+			SunSerialKiller++;
+			if (SunSerialKiller==3){
+				this.superspeed.callAll('revive');
+				SunSerialKiller=0;
+				Rtile = game.rnd.integerInRange(3, 8)
+			}
+			
+			if (this.score == 50 && this.lives<3) {
+				this.score=0;
+				this.lives++;
+			}
+			
+            if (this.suns.total === 0){
                 this.suns.callAll('revive');
             }
 
         },
-
+		
+		eatSuperspeed: function (pacman, superspeed) {
+			
+			Rtile="";
+			this.superspeed.callAll('kill');
+			this.speed=200;
+			SpeedCD = 5;
+			PraouPraou.play();
+			
+		},
+		
         update: function () {
-          
+			this.CurrentScore1.text = "Score: " + this.score;
+			this.CurrentScore2.text = "Score: " + this.score;
+			this.CurrentLives1.text = "Lives: ";
+			this.CurrentLives2.text = "Lives: ";
+			
+			if(this.lives==0){
+				this.life1.visible = false;
+				this.life2.visible = false;
+				this.life3.visible = false;
+			}
+			else if(this.lives==1){
+				this.life1.visible = true;
+				this.life2.visible = false;
+				this.life3.visible = false;
+			}
+			else if(this.lives==2){
+				this.life1.visible = true;
+				this.life2.visible = true;
+				this.life3.visible = false;
+			}
+			else if(this.lives==3){
+				this.life1.visible = true;
+				this.life2.visible = true;
+				this.life3.visible = true;
+			}
+			
+			this.SpeedHurry1.text = Rtile;
+			this.SpeedHurry2.text = Rtile;
+			
+			this.StartCount.text = scount;
+			this.StartGameTime1.text = "Time: " + gametimeM + ":" + gametimeS + "''";
+			this.StartGameTime2.text = "Time: " + gametimeM + "':" + gametimeS + "''";
+			
             this.physics.arcade.collide(this.pacman, this.layer);
             this.physics.arcade.overlap(this.pacman, this.drops, this.eatDrop, null, this);
 			this.physics.arcade.overlap(this.pacman, this.suns, this.eatSun, null, this);
+			this.physics.arcade.overlap(this.pacman, this.superspeed, this.eatSuperspeed, null, this);
 
             this.marker.x = this.math.snapToFloor(Math.floor(this.pacman.x), this.gridsize) / this.gridsize;
             this.marker.y = this.math.snapToFloor(Math.floor(this.pacman.y), this.gridsize) / this.gridsize;
