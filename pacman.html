@@ -19,25 +19,41 @@
 
     var game = new Phaser.Game(752, 496, Phaser.AUTO);
 	
+	var ChoseDif = false;
+	var DifContinue = null;
+	var OK = false;
 	var timer;
 	var tcount = 4;
 	var scount = "";
 	var gametimeM = "-";
 	var gametimeS = "-";
 	var Rtile = "";
-	var SpeedCD = 0;
+	var SpeedCD = null;
 	var SunSerialKiller = 0;
+	Zdir = null;
+	Zranddir = null;
 
     var Pacman = function (game) {
 
         this.map = null;
         this.layer = null;
+		this.layer1 = this.layer;
         this.pacman = null;
+		this.z1 = null;
+		this.z2 = null;
+		this.z3 = null;
+		this.z4 = null;
+		this.z5 = null;
+		this.z6 = null;
+		this.RegZombieSpeed = 100;
+		this.FullZombieSpeed = 150;
+		
 		this.score= 0;
 		this.lives= 1;
 		this.life1 = null;
 		this.life2 = null;
 		this.life3 = null;
+		this.dead = false;
 
         this.safetile = 1;
         this.gridsize = 16;
@@ -53,6 +69,10 @@
 
         this.current = Phaser.NONE;
         this.turning = Phaser.NONE;
+		this.Zcurrent = Phaser.NONE;
+        this.Zturning = Phaser.NONE;
+		this.Zdir = Phaser.NONE;
+		this.Zranddir = Phaser.NONE;
 
     };
 
@@ -84,15 +104,16 @@
             //this.load.baseURL = 'https://psarrask.github.io/pacman/';			/////////////////////////
             //this.load.crossOrigin = 'anonymous';								/////////////////////////
 
+			this.load.image('pvzbutton', 'assets/pvzbutton.png');
             this.load.image('drop', 'assets/drop.png');
 			this.load.image('sun', 'assets/sun.png');
 			this.load.image('superspeed', 'assets/superspeed.png');
 			this.load.image('life', 'assets/life.png');
             this.load.image('tiles', 'assets/pacman-tiles.png');
+			this.load.image('PauseDim', 'assets/pause.png');
             this.load.spritesheet('pacman', 'assets/pacman.png', 32, 53);
+			this.load.spritesheet('zombie', 'assets/zombie.png', 32, 53);
             this.load.tilemap('map', 'assets/pacman-map.json', null, Phaser.Tilemap.TILED_JSON);
-
-            //  Needless to say, graphics (C)opyright Namco
 			
 			///////SOUNDS///////
 			this.load.audio('getSUN', 'assets/EatSun.mp3');
@@ -101,32 +122,49 @@
 			this.load.audio('MUSIC', 'assets/pvzm.mp3');
 			this.load.audio('PRAOU', 'assets/PraouPraou.mp3');
 			this.load.audio('Beeep', 'assets/beep.m4a');
+			this.load.audio('Hahaha', 'assets/Laugh.mp3');
+			this.load.audio('IncomingWave', 'assets/Wave.mp3');
         },
 		
 		
         create: function () {
-		
+			
+			//  SOUNDS
 			PVZM = game.add.audio('MUSIC');
 			EatSun = game.add.audio('getSUN');
 			Eat20Drops = game.add.audio('get20DROPS');
 			EatALLDrops = game.add.audio('getALLDROPS');
 			PraouPraou = game.add.audio ('PRAOU');
 			BEEP = game.add.audio('Beeep');
+			Laugh = game.add.audio('Hahaha');
+			Wave = game.add.audio('IncomingWave');
 
+			// MAP
             this.map = this.add.tilemap('map');
             this.map.addTilesetImage('pacman-tiles', 'tiles');
 
             this.layer = this.map.createLayer('Pacman');
+			this.layer2 = this.map.createLayer('Z');
+			
+			this.cursors = this.input.keyboard.createCursorKeys();
 
+			// COLLECTIBLES
             this.drops = this.add.physicsGroup();
 			this.suns = this.add.physicsGroup();
 			this.superspeed = this.add.physicsGroup();
+			this.teleport1 = this.add.physicsGroup();
+			this.teleport2 = this.add.physicsGroup();
+			this.teleport3 = this.add.physicsGroup();
+			this.teleport4 = this.add.physicsGroup();
 
             this.map.createFromTiles(2, this.safetile, 'drop', this.layer, this.drops);
 			this.map.createFromTiles(3, this.safetile, 'sun', this.layer, this.suns);
-			this.map.createFromTiles(4, this.safetile, 'superspeed', this.layer, this.superspeed);
+			this.map.createFromTiles(4, this.safetile, 'superspeed', this.layer2, this.superspeed);
 			this.superspeed.callAll('kill');
-			//this.map.createFromTiles(82, this.safetile);
+			this.map.createFromTiles(62, this.safetile, null, this.layer, this.teleport1);
+			this.map.createFromTiles(63, this.safetile, null, this.layer, this.teleport2);
+			this.map.createFromTiles(170, this.safetile, null, this.layer, this.teleport3);
+			this.map.createFromTiles(171, this.safetile, null, this.layer, this.teleport4);
 
             //  The drops will need to be offset by 6px to put them back in the middle of the grid
             this.drops.setAll('x', 6, false, false, 1);
@@ -134,16 +172,92 @@
 
             //  Pacman should collide with everything except the safe tile
             this.map.setCollisionByExclusion([1, 82, 83, 84, 85], true, this.layer);
-
+			this.map.setCollisionByExclusion([1, 82, 83, 84, 85], true, this.layer2);
+			
+			//-----------------PACMAN-----------------\\
             //  Position Pacman at grid location 14x17 (the +8 accounts for his anchor)
-            this.pacman = this.add.sprite((18 * 16) + 8, (15 * 16) + 8, 'pacman', 0);
+            this.pacman = this.add.sprite((16 * 16) + 8, (15 * 16) + 8, 'pacman', 0);
             this.pacman.anchor.set(0.5);
 			
-			// MUNCH ANIMATIONS
+			this.physics.arcade.enable(this.pacman);
+            this.pacman.body.setSize(16, 16, 0, 0);
+			
+			//  MUNCH ANIMATIONS
             this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
 			this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
 			this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
 			
+			this.pacman.play('munchRL');
+			this.move(Phaser.NONE);
+			this.input.disabled = false;
+			this.pacman.visible = false;
+			
+			//------------------ZOMBIE 1------------------\\
+			//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+            this.z1 = this.add.sprite((9 * 16) + 8, (13 * 16) + 8, 'zombie', 0);
+            this.z1.anchor.set(0.5);
+			this.z1.speed = this.RegZombieSpeed;
+			
+			this.physics.arcade.enable(this.z1);
+            this.z1.body.setSize(16, 16, 0, 0);
+			
+			this.z1.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+			this.z1.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+			this.z1.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+			this.z1.play('walkRL');
+			this.Zcurrent = Phaser.RIGHT;
+			
+			//------------------ZOMBIE 2------------------\\
+			//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+            this.z2 = this.add.sprite((15 * 16) + 8, (24 * 16) + 8, 'zombie', 0);
+            this.z2.anchor.set(0.5);
+			this.z2.speed = this.RegZombieSpeed;
+			
+			this.physics.arcade.enable(this.z2);
+            this.z2.body.setSize(16, 16, 0, 0);
+			
+			this.z2.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+			this.z2.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+			this.z2.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+			this.z2.play('walkRL');
+			this.Zcurrent = Phaser.RIGHT;
+			
+			//------------------ZOMBIE 3------------------\\
+			//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+            this.z3 = this.add.sprite((39 * 16) + 8, (8 * 16) + 8, 'zombie', 0);
+            this.z3.anchor.set(0.5);
+			this.z3.speed = this.RegZombieSpeed;
+			
+			this.physics.arcade.enable(this.z3);
+            this.z3.body.setSize(16, 16, 0, 0);
+			
+			this.z3.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+			this.z3.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+			this.z3.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+			this.z3.play('walkRL');
+			this.Zcurrent = Phaser.RIGHT;
+			
+			//------------------ZOMBIE 4------------------\\
+			//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+            this.z4 = this.add.sprite((32 * 16) + 8, (20 * 16) + 8, 'zombie', 0);
+            this.z4.anchor.set(0.5);
+			this.z4.speed = this.RegZombieSpeed;
+			
+			this.physics.arcade.enable(this.z4);
+            this.z4.body.setSize(16, 16, 0, 0);
+			
+			this.z4.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+			this.z4.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+			this.z4.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+			this.z4.play('walkRL');
+			this.Zcurrent = Phaser.RIGHT;
+			
+			//########### SCREEN MESSAGES & INFO ###########\\
+			//  Lives
 			this.life1 = this.add.sprite(175, 472, 'life');
 			this.life2 = this.add.sprite(195, 472, 'life');
 			this.life3 = this.add.sprite(215, 472, 'life');
@@ -151,74 +265,286 @@
 			this.life2.visible = false;
 			this.life3.visible = false;
 			
-			this.CurrentScore1 = game.add.text(528, 471.6, "Score: " + this.score, { fontSize: "19px", fill: "#133913"});
-			this.CurrentScore2 = game.add.text(527, 470, "Score: " + this.score, { fontSize: "19px", fill: "#2d862d"});
-			
 			this.CurrentLives1 = game.add.text(120, 471.6, "Lives: " + this.lives, { fontSize: "19px", fill: "#133913"});
 			this.CurrentLives2 = game.add.text(119, 470, "Lives: " + this.lives, { fontSize: "19px", fill: "#2d862d"});
 			
-            this.physics.arcade.enable(this.pacman);
-            this.pacman.body.setSize(16, 16, 0, 0);
-
-            this.cursors = this.input.keyboard.createCursorKeys();
-
-            this.pacman.play('munchRL');
-            
-			//Arxiki kinisi-kateythinsi
-			this.move(Phaser.NONE);
-			this.input.disabled = true;
+			//  Score
+			this.CurrentScore1 = game.add.text(528, 471.6, "Score: " + this.score, { fontSize: "19px", fill: "#133913"});
+			this.CurrentScore2 = game.add.text(527, 470, "Score: " + this.score, { fontSize: "19px", fill: "#2d862d"});
 			
+			//  SuperSpeed Count-Down
 			this.SpeedHurry1 = game.add.text(367.5, 11.5, Rtile, { fontSize: "40px", fill: "#000"});
 			this.SpeedHurry2 = game.add.text(365, 10, Rtile, { fontSize: "40px", fill: "#fff"});
-
+			
+			//  KILL THEM ALL!
+			this.KILLtext = game.add.text(350, 130, "KILL", { fontSize: "25px", fill: "#fff"});
+			this.THEMtext = game.add.text(342, 150, "THEM", { fontSize: "25px", fill: "#fff"});
+			this.ALLtext = game.add.text(350, 170, "ALL!", { fontSize: "25px", fill: "#fff"});
+			this.KILLtext.visible = false;
+			this.THEMtext.visible = false;
+			this.ALLtext.visible = false;
+			
+			// THE ZOMBIES ARE HUNGRY!
+			this.THEtext = game.add.text(358, 301, "THE", { fontSize: "17px", fill: "#fff"});
+			this.ZOMBIEStext = game.add.text(337, 319, "ZOMBIES", { fontSize: "17px", fill: "#fff"});
+			this.AREtext = game.add.text(358, 337, "ARE", { fontSize: "17px", fill: "#fff"});
+			this.HUNGRYtext = game.add.text(337, 355, "HUNGRY!", { fontSize: "17px", fill: "#fff"});
+			this.THEtext.visible = false;
+			this.ZOMBIEStext.visible = false;
+			this.AREtext.visible = false;
+			this.HUNGRYtext.visible = false;
+			
+			//  Starting Count-Down and Time
 			timer = game.time.create(false);
 			timer.loop(1000, this.updateCounter, this);
 			timer.start();
 			this.StartCount = game.add.text(350, 231, scount, { fontSize: "30px", fill: "#fff"});
 			this.StartGameTime1 = game.add.text(329.5, 471.5, "Time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "19px", fill: "#000"});
 			this.StartGameTime2 = game.add.text(327, 470, "Time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "19px", fill: "#fff"});
+			
+			//************************************************************ DIFFICULTY BUTTONS ************************************************************\\
+			this.DifText2 = game.add.text(236.5, 235.5, 'Please choose your difficulty:', { fontSize: "20px", fill: "#000"});
+			this.DifText = game.add.text(235, 234, 'Please choose your difficulty:', { fontSize: "20px", fill: "#fff"});
+			
+			
+			this.but1 = this.add.sprite( 241.5, 263.5, 'pvzbutton');
+			DifBut1 = game.add.text( 262.5, 266, 'Easy', { fontSize: '20px', fill: '#ffffff' });
+			
+			DifBut1.inputEnabled = true;
+			DifBut1.events.onInputUp.add(function () {
+				if( this.OK == true ){
+					this.DifContinue = 1;
+				}
+			});
+			
+			this.but2 = this.add.sprite( 331.5, 263.5, 'pvzbutton');
+			DifBut2 = game.add.text( 338.5, 266, 'Medium', { fontSize: '20px', fill: '#ffffff' });
+			
+			DifBut2.inputEnabled = true;
+			DifBut2.events.onInputUp.add(function () {
+				if( this.OK == true ){
+					this.DifContinue = 2;
+				}
+			});
+			
+			this.but3 = this.add.sprite( 421.5, 263.5, 'pvzbutton');
+			DifBut3 = game.add.text( 442.5, 266, 'Hard', { fontSize: '20px', fill: '#ffffff' });
+			
+			DifBut3.inputEnabled = true;
+			DifBut3.events.onInputUp.add(function () {
+				if( this.OK == true ){
+					this.DifContinue = 3;
+				}
+			});
+			//************************************************************ DIFFICULTY BUTTONS ************************************************************\\
+			
+			//this.InfodimBack = this.add.sprite( 26, 23, 'PauseDim');
+			
+			//************* PAUSE BUTTON *************\\
+			this.but = this.add.sprite( 331.5, 442.5, 'pvzbutton');
+			pause_label = game.add.text( 337, 445, 'PAUSE', { fontSize: '23px', fill: '#ffffff' });
+			
+			pause_label.inputEnabled = true;
+			pause_label.events.onInputUp.add(function () {
+				// When the paus button is pressed, we pause the game
+				if( game.paused == false && this.ChoseDif != false ){
+					game.paused = true;
+					PVZM.pause();
+					this.PState = game.add.text(212, 190, "PAUSED", { fontSize: "80px", fill: "#a00000"});
+					this.Pmess = game.add.text(239, 270, "Click anywhere in the game to unpause.", { fontSize: "15px", fill: "#fff"});
+				}
+			});
+			
+			//************* INFO BUTTON *************\\
+			this.InfodimBack = this.add.sprite( 26, 23, 'PauseDim');
+			
+			this.INFObut = this.add.sprite( 331.5, 422.5, 'pvzbutton');
+			info_label = game.add.text( 357, 425, 'OK', { fontSize: '23px', fill: '#ffffff' });
+			
+			info_label.inputEnabled = true;
+			info_label.events.onInputUp.add(function () {
+				this.OK = true;
+			});
+			
+			
+			
+			//Click Listener
+			game.input.onDown.add(unpause, self);
+			
+			function unpause(event){
+				// Only act if paused
+				if ( this.InfodimBack != null ){
+					this.InfodimBack.destroy();
+				}
+				if(game.paused){
+					this.PState.destroy();
+					this.Pmess.destroy();
+					// Unpause the game
+					game.paused = false;
+					PVZM.resume();
+				}
+			};
+			
         },
 		
 		updateCounter: function () {
-			if (scount == "GO!" && gametimeS == "-"){ 
+			if (scount == "GO!" && gametimeS == "-"){ 	// START GAME & TIME!
 				scount= "";
 				PVZM.play('', 0, 1, true);
 				this.input.disabled = false;
-				this.move(Phaser.RIGHT);
+				//this.move(Phaser.RIGHT);
+				this.moveZ(Phaser.LEFT, this.z1);
+				this.moveZ(Phaser.RIGHT, this.z2);
+				this.moveZ(Phaser.LEFT, this.z3);
+				this.moveZ(Phaser.RIGHT, this.z4);
+				if( DifContinue >=2){
+					this.moveZ(Phaser.LEFT, this.z5);
+					this.moveZ(Phaser.RIGHT, this.z6);
+				}
 				gametimeM = 0;
 				gametimeS = 0;
 			}
-			else if(gametimeS == 59 ){
+			else if(gametimeS == 59 ){					// TIME: COUNTING MINUTES
 				gametimeM++;
 				gametimeS = 0;
+				if( gametimeM == 1 ){
+					Wave.play();
+					this.THEtext.visible = true;
+					this.ZOMBIEStext.visible = true;
+					this.AREtext.visible = true;
+					this.HUNGRYtext.visible = true;
+					
+					this.z1.speed = this.FullZombieSpeed;
+					this.z2.speed = this.FullZombieSpeed;
+					this.z3.speed = this.FullZombieSpeed;
+					this.z4.speed = this.FullZombieSpeed;
+					if( DifContinue >=2){
+						this.z5.speed = this.FullZombieSpeed;
+						this.z6.speed = this.FullZombieSpeed;
+					}
+				}
 			}
-			else if (gametimeS != "-"){
+			else if (gametimeS != "-"){					// TIME: COUNTING SECONDS
 				gametimeS++;
 			}
-			else if (tcount == 1){ 
+			else if (tcount == 1){ 						// STARTING COUNT-DOWN "GO"
 				scount= "GO!";
 				BEEP.play();
 			}
-			else{
+			else if ( DifContinue != null ){										// STARTING COUNT-DOWN
 				tcount--; 
 				if (tcount < 5) {
 					scount = "  " + tcount;
 					BEEP.play();
+					if ( ChoseDif == false ){
+						this.DifText2.visible = false;
+						this.DifText.visible = false;
+						
+						this.but1.visible = false;
+						DifBut1.visible = false;
+						
+						this.but2.visible = false;
+						DifBut2.visible = false;
+						
+						this.but3.visible = false;
+						DifBut3.visible = false;
+						
+						this.pacman.visible = false;
+						this.input.disabled = true;
+						
+						//-----------------PACMAN-----------------\\
+						//  Position Pacman at grid location 14x17 (the +8 accounts for his anchor)
+						this.pacman = this.add.sprite((16 * 16) + 8, (15 * 16) + 8, 'pacman', 0);
+						this.pacman.anchor.set(0.5);
+						
+						this.physics.arcade.enable(this.pacman);
+						this.pacman.body.setSize(16, 16, 0, 0);
+						
+						//  MUNCH ANIMATIONS
+						this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
+						this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
+						this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
+						
+						this.pacman.play('munchRL');
+						this.move(Phaser.NONE);
+					}
 				}
 			}
-			if(Rtile>0){
+			if(Rtile>0){								// SUPERSPEED COUNT-DOWN
 				Rtile--;
 			}
-			else if(Rtile==0){
+			else if(Rtile==0){							// VANISH SUPERSPEED
 				Rtile="";
 				this.superspeed.callAll('kill');
 			}
-			if(SpeedCD>0){
+			if(SpeedCD>0){								// COLLECTED SUPERSPEED DURATION COUNT-DOWN
 				SpeedCD--;
 			}
-			else if(SpeedCD == 0){
+			else if(SpeedCD == 0){						// COLLECTED SUPERSPEED DURATION OVER
 				SpeedCD=null;
 				this.speed=150;
+				
+				this.KILLtext.visible = false;
+				this.THEMtext.visible = false;
+				this.ALLtext.visible = false;
+			}
+			if( DifContinue == 1 && ChoseDif == false ){
+				this.RegZombieSpeed = 70;
+				this.FullZombieSpeed = 100;
+				
+				this.z1.speed = this.RegZombieSpeed;
+				this.z2.speed = this.RegZombieSpeed;
+				this.z3.speed = this.RegZombieSpeed;
+				this.z4.speed = this.RegZombieSpeed;
+				
+				ChoseDif = true;
+			}
+			else if( DifContinue >= 2 && ChoseDif == false ){
+				//------------------ZOMBIE 5------------------\\
+				//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+				this.z5 = this.add.sprite((16 * 16) + 8, (4 * 16) + 8, 'zombie', 0);
+				this.z5.anchor.set(0.5);
+				this.z5.speed = this.RegZombieSpeed;
+			
+				this.physics.arcade.enable(this.z5);
+				this.z5.body.setSize(16, 16, 0, 0);
+			
+				this.z5.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+				this.z5.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+				this.z5.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+				this.z5.play('walkRL');
+				this.Zcurrent = Phaser.RIGHT;
+			
+				//------------------ZOMBIE 6------------------\\
+				//  Position Zombie at grid location 14x17 (the +8 accounts for his anchor)
+				this.z6 = this.add.sprite((39 * 16) + 8, (26 * 16) + 8, 'zombie', 0);
+				this.z6.anchor.set(0.5);
+				this.z6.speed = this.RegZombieSpeed;
+			
+				this.physics.arcade.enable(this.z6);
+				this.z6.body.setSize(16, 16, 0, 0);
+			
+				this.z6.animations.add('walkRL', [0, 1, 2, 3, 4], 40, true);
+				this.z6.animations.add('walkUP', [5, 6, 7, 8, 9], 40, true);
+				this.z6.animations.add('walkDOWN', [10, 11, 12, 13, 14], 40, true);
+			
+				this.z6.play('walkRL');
+				this.Zcurrent = Phaser.RIGHT;
+				this.input.disabled = true;
+				
+				if( DifContinue == 3 ){
+					this.RegZombieSpeed = 150;
+					this.FullZombieSpeed = 200;
+					
+					this.z1.speed = this.RegZombieSpeed;
+					this.z2.speed = this.RegZombieSpeed;
+					this.z3.speed = this.RegZombieSpeed;
+					this.z4.speed = this.RegZombieSpeed;
+					this.z5.speed = this.RegZombieSpeed;
+					this.z6.speed = this.RegZombieSpeed;
+				}
+				ChoseDif = true;
 			}
 		},
 
@@ -226,8 +552,13 @@
 			//game.debug.text('Time until event: ' + timer.duration.toFixed(0), 32, 30);
 			//game.debug.text('Tcount: ' + tcount, 32, 50);
 			//game.debug.text('Scount: ' + scount, 32, 70);
+			//game.debug.text('Zdir: ' + this.Zdir, 32, 50);
+			//game.debug.text('Zranddir: ' + this.Zranddir, 32, 70);
+			//game.debug.text('Zcurrent: ' + this.Zcurrent, 32, 90);
 			//game.debug.text('Gametime: ' + gametimeS + "''", 32, 90);
 			//game.debug.text('Get SuperSpeed! ' + Rtile, 32, 110);
+			//game.debug.text(OK, 32, 110);
+			//game.debug.text(this.InfodimBack, 32, 70);
 		},
 
         checkKeys: function () {
@@ -295,12 +626,13 @@
             this.pacman.x = this.turnPoint.x;
             this.pacman.y = this.turnPoint.y;
 
-            this.pacman.body.reset(this.turnPoint.x, this.turnPoint.y);
+			if ( this.pacman.body != null ){
+				this.pacman.body.reset(this.turnPoint.x, this.turnPoint.y);
 
-            this.move(this.turning);
+				this.move(this.turning);
 
-            this.turning = Phaser.NONE;
-
+				this.turning = Phaser.NONE;
+			}
             return true;
 
         },
@@ -350,11 +682,201 @@
             this.current = direction;
 
         },
+		
+		checkZKeys: function (z) {
+			if( this.Zcurrent == Phaser.NONE ) { 
+				this.Zcurrent = Phaser.RIGHT; 
+			}
+			if( this.Zcurrent == Phaser.RIGHT || this.Zcurrent == Phaser.LEFT ){
+				this.Zranddir = game.rnd.integerInRange(1, 2);
+				if ( this.Zranddir == 1) { this.Zdir = Phaser.UP }
+				else if ( this.Zranddir == 2) { this.Zdir = Phaser.DOWN }
+				this.moveZ(this.Zdir, z);
+			}
+			else if( this.Zcurrent == Phaser.UP || this.Zcurrent == Phaser.DOWN ){
+				this.Zranddir = game.rnd.integerInRange(1, 4);
+				if ( this.Zranddir == 1) { this.Zdir = Phaser.LEFT }
+				else if ( this.Zranddir == 4) { this.Zdir = Phaser.RIGHT }
+				this.moveZ(this.Zdir, z);
+			}
+			if( this.Zdir == Phaser.NONE ){
+				this.Zdir = Phaser.RIGHT;
+				this.moveZ(this.Zdir, z);
+			}
+        },
+		
+		checkZDirection: function (turnTo) {
 
-        eatDrop: function (pacman, drop) {
+            if (this.Zturning === turnTo || this.directions[turnTo] === null || this.directions[turnTo].index !== 1)
+            {
+                //  Invalid direction if they're already set to turn that way
+                //  Or there is no tile there, or the tile isn't index 1 (a floor tile)
+                return;
+            }
+
+            //  Check if they want to turn around and can
+            if (this.Zcurrent === this.opposites[turnTo])
+            {
+                this.moveZ(turnTo);
+            }
+            else
+            {
+                this.Zturning = turnTo;
+
+                this.turnPoint.x = (this.marker.x * this.gridsize) + (this.gridsize / 2);
+                this.turnPoint.y = (this.marker.y * this.gridsize) + (this.gridsize / 2);
+            }
+
+        },
+
+        turnZ: function (z) {
+
+            var cx = Math.floor(z.x);
+            var cy = Math.floor(z.y);
+
+            //  This needs a threshold, because at high speeds you can't turn because the coordinates skip past
+            if (!this.math.fuzzyEqual(cx, this.turnPoint.x, this.threshold) || !this.math.fuzzyEqual(cy, this.turnPoint.y, this.threshold))
+            {
+                return false;
+            }
+
+            //  Grid align before Zturning
+            z.x = this.turnPoint.x;
+            z.y = this.turnPoint.y;
+
+			if( z.body != null ){
+				z.body.reset(this.turnPoint.x, this.turnPoint.y);
+
+				this.moveZ(this.Zturning, z);
+
+				this.Zturning = Phaser.NONE;
+			}
+			
+            return true;
+
+        },
+		
+        moveZ: function (direction, z) {
+			
+            var Zspeed = z.speed;
+
+            if (direction === Phaser.LEFT || direction === Phaser.UP)
+            {
+                Zspeed = -Zspeed;
+            }
+
+            if (direction === Phaser.LEFT || direction === Phaser.RIGHT)
+            {
+                z.body.velocity.x = Zspeed;
+            }
+            else
+            {
+                z.body.velocity.y = Zspeed;
+            }
+
+            //  Reset the scale and angle (Pacman is facing to the right in the sprite sheet)
+            z.scale.x = 1;
+            z.angle = 0;
+
+            if (direction === Phaser.LEFT)
+            {
+				z.play('walkRL');
+                z.scale.x = -1;
+            }
+			else if (direction === Phaser.RIGHT)
+            {
+				z.play('walkRL');
+            }
+            else if (direction === Phaser.UP)
+            {
+                //this.z1.angle = 270;
+				z.play('walkUP');
+            }
+            else if (direction === Phaser.DOWN)
+            {
+                //this.z1.angle = 90;
+				z.play('walkRL');
+            }
+
+            this.Zcurrent = direction;
+			if( this.Zcurrent == Phaser.NONE ) { 
+				this.Zcurrent = Phaser.RIGHT; 
+			}
+
+        },
+		
+		killPacman: function(z) {						//++++++++++++++++++++ KILL OR BE KILLED ON COLLISION WITH ZOMBIE ++++++++++++++++++++\\
+			if( SpeedCD != null ){
+				z.destroy();
+			}
+			else{
+				this.lives--;
+				this.pacman.destroy();
+				this.pacman = this.add.sprite((16 * 16) + 8, (15 * 16) + 8, 'pacman', 0);
+				this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
+				this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
+				this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
+				this.pacman.anchor.set(0.5);
+				this.physics.arcade.enable(this.pacman);
+				this.pacman.body.setSize(16, 16, 0, 0);
+				this.pacman.play('munchRL');
+				this.move(Phaser.NONE);
+				if( this.lives == 0 ){
+					this.pacman.dead = true;
+					this.GameOver = game.add.text(140, 190, "GAME OVER", { fontSize: "80px", fill: "#a00000"});
+					this.YourTime = game.add.text(250, 266, "Your time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "30px", fill: "#fff"});
+					
+					this.StartGameTime1.visible = false;
+					this.StartGameTime2.visible = false;
+					this.SpeedHurry1.visible = false;
+					this.SpeedHurry2.visible = false;
+					this.KILLtext.visible = false;
+					this.THEMtext.visible = false;
+					this.ALLtext.visible = false;
+					this.THEtext.visible = false;
+					this.ZOMBIEStext.visible = false;
+					this.AREtext.visible = false;
+					this.HUNGRYtext.visible = false;
+					
+					Laugh.play();
+					this.pacman.destroy();
+					pause_label.destroy();
+					this.but.destroy();
+					
+				}
+			}
+		},
+		
+		TreeToChurch: function() {
+			this.pacman.destroy();
+			this.pacman = this.add.sprite((35 * 16) + 8, (17 * 16) + 8, 'pacman', 0);
+			this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
+			this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
+			this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
+			this.pacman.anchor.set(0.5);
+			this.physics.arcade.enable(this.pacman);
+			this.pacman.body.setSize(16, 16, 0, 0);
+			this.pacman.play('munchDOWN');
+			this.move(Phaser.NONE);
+		},
+		
+		ChurchToTree: function() {
+			this.pacman.destroy();
+			this.pacman = this.add.sprite((11 * 16) + 8, (17 * 16) + 8, 'pacman', 0);
+			this.pacman.animations.add('munchRL', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 40, true);
+			this.pacman.animations.add('munchUP', [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], 40, true);
+			this.pacman.animations.add('munchDOWN', [32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47], 40, true);
+			this.pacman.anchor.set(0.5);
+			this.physics.arcade.enable(this.pacman);
+			this.pacman.body.setSize(16, 16, 0, 0);
+			this.pacman.play('munchDOWN');
+			this.move(Phaser.NONE);
+		},
+		
+        	eatDrop: function (pacman, drop) {
 		
 			this.score++;
-            drop.kill();
+            		drop.kill();
 			
 			if (this.score %5 === 0 ){ 
 				Eat20Drops.play();
@@ -365,22 +887,50 @@
 				this.lives++;
 			}
 
-            if (this.drops.total === 0){	
+            		if (this.drops.total === 0){
+				
+				this.z1.destroy();
+				this.z2.destroy();
+				this.z3.destroy();
+				this.z4.destroy();
+				if( DifContinue >=2){
+					this.z5.destroy();
+					this.z6.destroy();
+				}
+				
+				this.GameOver = game.add.text(190, 190, "YOU WIN!", { fontSize: "80px", fill: "#a00000"});
+				this.YourTime = game.add.text(250, 266, "Your time: " + gametimeM + "':" + gametimeS + "''", { fontSize: "30px", fill: "#fff"});
+				
+				this.StartGameTime1.visible = false;
+				this.StartGameTime2.visible = false;
+				this.SpeedHurry1.visible = false;
+				this.SpeedHurry2.visible = false;
+				this.KILLtext.visible = false;
+				this.THEMtext.visible = false;
+				this.ALLtext.visible = false;
+				this.THEtext.visible = false;
+				this.ZOMBIEStext.visible = false;
+				this.AREtext.visible = false;
+				this.HUNGRYtext.visible = false;
+				
+				this.pacman.dead = true;
 				EatALLDrops.play();
-                this.drops.callAll('revive');
-            }
+				pause_label.destroy();
+				this.but.destroy();
+                	//this.drops.callAll('revive');
+           	}
 			
         },
 		
 		eatSun: function (pacman, sun) {
 
 			EatSun.play();
-            sun.kill();
+            		sun.kill();
 			SunSerialKiller++;
-			if (SunSerialKiller==3){
+			if (SunSerialKiller==5){
 				this.superspeed.callAll('revive');
 				SunSerialKiller=0;
-				Rtile = game.rnd.integerInRange(3, 8)
+				Rtile = game.rnd.integerInRange(3, 8);
 			}
 			
 			if (this.score == 50 && this.lives<3) {
@@ -388,10 +938,10 @@
 				this.lives++;
 			}
 			
-            if (this.suns.total === 0){
-                this.suns.callAll('revive');
-            }
-
+            		if (this.suns.total === 0){
+                	this.suns.callAll('revive');
+           	}
+			
         },
 		
 		eatSuperspeed: function (pacman, superspeed) {
@@ -402,14 +952,32 @@
 			SpeedCD = 5;
 			PraouPraou.play();
 			
+			this.KILLtext.visible = true;
+			this.THEMtext.visible = true;
+			this.ALLtext.visible = true;
+			
 		},
 		
-        update: function () {
+        	update: function () {
+			
+			if(this.pacman.dead==true){						///+++   GAME OVER
+				this.input.disabled = true;
+				this.speed=0;
+				timer.stop();
+				PVZM.stop('', 0, 1, true);
+				EatSun.stop();
+			}
+			
+			this.layer1 = this.layer;
+			
+			//########### SCREEN MESSAGES & INFO ###########\\
+			// Score
 			this.CurrentScore1.text = "Score: " + this.score;
 			this.CurrentScore2.text = "Score: " + this.score;
+			
+			// Lives
 			this.CurrentLives1.text = "Lives: ";
 			this.CurrentLives2.text = "Lives: ";
-			
 			if(this.lives==0){
 				this.life1.visible = false;
 				this.life2.visible = false;
@@ -431,18 +999,52 @@
 				this.life3.visible = true;
 			}
 			
+			// SuperSpeed Count-Down
 			this.SpeedHurry1.text = Rtile;
 			this.SpeedHurry2.text = Rtile;
 			
+			// Starting Count-Down and Time
 			this.StartCount.text = scount;
 			this.StartGameTime1.text = "Time: " + gametimeM + ":" + gametimeS + "''";
 			this.StartGameTime2.text = "Time: " + gametimeM + "':" + gametimeS + "''";
 			
-            this.physics.arcade.collide(this.pacman, this.layer);
-            this.physics.arcade.overlap(this.pacman, this.drops, this.eatDrop, null, this);
+            		this.physics.arcade.collide(this.pacman, this.layer);
+            		this.physics.arcade.overlap(this.pacman, this.drops, this.eatDrop, null, this);
 			this.physics.arcade.overlap(this.pacman, this.suns, this.eatSun, null, this);
 			this.physics.arcade.overlap(this.pacman, this.superspeed, this.eatSuperspeed, null, this);
-
+			
+			//PACMAN-ZOMBIE 1 COLLISIONS
+			this.physics.arcade.collide(this.z1, this.layer2, this.checkZKeys, null, this);
+			this.physics.arcade.overlap(this.z1, this.pacman, this.killPacman, null, this);
+			
+			//PACMAN-ZOMBIE 2 COLLISIONS
+			this.physics.arcade.collide(this.z2, this.layer2, this.checkZKeys, null, this);
+			this.physics.arcade.overlap(this.z2, this.pacman, this.killPacman, null, this);
+			
+			//PACMAN-ZOMBIE 3 COLLISIONS
+			this.physics.arcade.collide(this.z3, this.layer2, this.checkZKeys, null, this);
+			this.physics.arcade.overlap(this.z3, this.pacman, this.killPacman, null, this);
+			
+			//PACMAN-ZOMBIE 4 COLLISIONS
+			this.physics.arcade.collide(this.z4, this.layer2, this.checkZKeys, null, this);
+			this.physics.arcade.overlap(this.z4, this.pacman, this.killPacman, null, this);
+			
+			if( DifContinue >= 2){
+				//PACMAN-ZOMBIE 5 COLLISIONS
+				this.physics.arcade.collide(this.z5, this.layer2, this.checkZKeys, null, this);
+				this.physics.arcade.overlap(this.z5, this.pacman, this.killPacman, null, this);
+			
+				//PACMAN-ZOMBIE 6 COLLISIONS
+				this.physics.arcade.collide(this.z6, this.layer2, this.checkZKeys, null, this);
+				this.physics.arcade.overlap(this.z6, this.pacman, this.killPacman, null, this);
+			}
+			
+			//PACMAN-TELEPORT COLLISIONS
+			this.physics.arcade.overlap(this.pacman, this.teleport1, this.TreeToChurch, null, this);
+			this.physics.arcade.overlap(this.pacman, this.teleport2, this.TreeToChurch, null, this);
+			this.physics.arcade.overlap(this.pacman, this.teleport3, this.ChurchToTree, null, this);
+			this.physics.arcade.overlap(this.pacman, this.teleport4, this.ChurchToTree, null, this);
+			
             this.marker.x = this.math.snapToFloor(Math.floor(this.pacman.x), this.gridsize) / this.gridsize;
             this.marker.y = this.math.snapToFloor(Math.floor(this.pacman.y), this.gridsize) / this.gridsize;
 
@@ -458,7 +1060,19 @@
             {
                 this.turn();
             }
-
+			
+			
+            this.turnZ(this.z1);
+			
+			if( OK == false && this.InfodimBack == null ){
+				this.InfodimBack.visible = true;
+			}
+            else if( OK == true ){
+				this.InfodimBack.visible = false;
+				this.INFObut.destroy();
+				info_label.destroy();
+			}
+			
         }
 
     };
