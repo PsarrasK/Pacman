@@ -4,8 +4,6 @@
 
 ### [Η εργασία στο προσωπικό μου αποθετήριο](https://github.com/PsarrasK/Pacman)
 
-### [Read me του Project σε μορφή github pages](https://psarrask.github.io/Pacman/)
-
 ### [Σύνδεσμος για το εκτελέσιμο](https://psarrask.github.io/Pacman)
 
 (Προτείνεται η εκκαθάριση της κρυφής μνήμης πριν την επίσκεψη στη σελίδα του εκτελέσιμου. Δείτε στο τέλος της σελίδας για περισσότερα)
